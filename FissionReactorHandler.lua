@@ -111,7 +111,7 @@ local function main()
                 -- Régulation thermique stable avec correction de l'intervalle
                 if bus.coolant >= 99 then
                     logicAdapter.setBurnRate(clamp(bus.burn + 0.05, 0.1, bus.maxBurn))
-                elseif bus.coolant > 40 and bus.coolant < 99 then
+                elseif bus.coolant > 10 and bus.coolant < 25 then
                     logicAdapter.setBurnRate(clamp(bus.burn / 1.5, 0.1, bus.maxBurn))
                 else
                     logicAdapter.setBurnRate(clamp(bus.burn - 0.01, 0.1, bus.maxBurn))
