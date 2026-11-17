@@ -13,18 +13,14 @@ local function reconnect()
 end
 
 local function dangerous(bus)
-    if bus.coolant <= 5 or bus.fuel <= 5 or bus.heated >= 90 or bus.waste >= 90 or bus.damage >= 10 or bus.temp >= 80 then
-        return true
-    else
-        return false
-    end
+    return bus.coolant <= 5 or bus.fuel <= 5 or bus.heated >= 90 or bus.waste >= 90 or bus.damage >= 10 or bus.temp >= 80
 end
 
 local function clamp(value, min, max)
     return math.max(min, math.min(value, max))
 end
 
-local function read(r)
+local function readReactor(r)
     return {
         coolant = r.getCoolantFilledPercentage() * 100,
         fuel    = r.getFuelFilledPercentage() * 100,
@@ -38,24 +34,22 @@ local function read(r)
     }
 end
 
-local function draw(bus, state, monitor, CFG)
-    -- Vérifie si le monitor supporte la couleur pour éviter les erreurs
+local function draw(bus, state, monitor)
     local isColor = monitor.isColor and monitor.isColor()
     
-    local C_BG         = isColor and colors.black or colors.black
-    local C_FIRST_COL  = isColor and colors.white or colors.white
-    local C_SECOND_COL = isColor and colors.green or colors.white
+    local C_BG         = colors.black
+    local C_FIRST_COL  = colors.white
+    local C_SECOND_COL = colors.green
 
-    -- Nettoyage et configuration de l'écran
     monitor.clear()
     monitor.setBackgroundColor(C_BG)
     
-    -- 1. Affichage du titre en haut (centré ou au début)
+    -- Titre
     monitor.setCursorPos(1, 1)
-    monitor.setTextColor(colors.yellow) -- Couleur du titre pour le style
+    monitor.setTextColor(colors.yellow)
     monitor.write("=== Fission Auto ===")
 
-    -- 2. Définition des données en colonnes (comme vu précédemment)
+    -- Données en colonnes
     local columns = {
         {"Etat",    ":", ("%s"):format(state)},
         {"Burn",    ":", ("%.2f / %.1f mB/t"):format(bus.burn, bus.maxBurn)},
@@ -67,7 +61,6 @@ local function draw(bus, state, monitor, CFG)
         {"Damage",  ":", ("%.1f%%"):format(bus.damage)}
     }
 
-    -- 3. Affichage ligne par ligne en partant de la ligne 3
     local startY = 3
     for i, row in ipairs(columns) do
         monitor.setCursorPos(1, startY + i - 1)
@@ -76,7 +69,7 @@ local function draw(bus, state, monitor, CFG)
         monitor.setTextColor(C_FIRST_COL)
         monitor.write(row[1])
 
-        -- Séparateur (on décale pour l'alignement, par exemple à la colonne 11)
+        -- Séparateur
         monitor.setCursorPos(11, startY + i - 1)
         monitor.setTextColor(colors.lightGray)
         monitor.write(row[2])
@@ -88,11 +81,6 @@ local function draw(bus, state, monitor, CFG)
     end
 end
 
-local function round(n, decimal)
-    local multiplicator = 10 ^ (decimal or 0)
-    return math.floor(n * multiplicator + 0.5) / multiplicator
-end
-
 local function main()
     os.sleep(2)
 
@@ -101,46 +89,45 @@ local function main()
     local state = "Inactif"
 
     monitor.setTextScale(1)
-    local isColor = monitor.isColor()
-
-    local CFG = {
-        C_BG    = isColor and colors.black or colors.black,
-        C_FIRST_COL  = isColor and colors.white or colors.white,
-        C_SECOND_COL  = isColor and colors.green or colors.white,
-    }
 
     while true do
-        local success3, err3 = pcall(function ()
-            bus = read(logicAdapter)
+        local success, err = pcall(function()
+            bus = readReactor(logicAdapter)
 
             if dangerous(bus) then
-                if bus.active == true then
+                if bus.active then
                     logicAdapter.scram()
                     state = "SCRAMMED"
                 end
-                logicAdapter.setBurnRate(clamp(math.floor(round(bus.burn / 2) * 100 + 0.5) / 100, 0.1, bus.maxBurn))
+                logicAdapter.setBurnRate(clamp(bus.burn / 2, 0.1, bus.maxBurn))
             else
-                if bus.active == false then
+                if not bus.active then
                     logicAdapter.activate()
-                    state = "Activate"
+                    state = "Actif"
+                else
+                    state = "Actif"
                 end
-                --
+
+                -- Régulation thermique stable avec correction de l'intervalle
                 if bus.coolant >= 99 then
                     logicAdapter.setBurnRate(clamp(bus.burn + 0.05, 0.1, bus.maxBurn))
-                elseif 40 < bus.coolant < 99 then
-                    logicAdapter.setBurnRate(clamp(round(bus.burn/1.5), 0.1, bus.maxBurn))
+                elseif bus.coolant > 40 and bus.coolant < 99 then
+                    logicAdapter.setBurnRate(clamp(bus.burn / 1.5, 0.1, bus.maxBurn))
                 else
                     logicAdapter.setBurnRate(clamp(bus.burn - 0.01, 0.1, bus.maxBurn))
                 end
             end
-            draw(bus, state, monitor, CFG)
-            os.sleep(0.5)
+            draw(bus, state, monitor)
         end)
-        if not success3 then
+
+        if not success then
             state = "Adapter Non Trouve"
+            local errBus = { coolant = 0, fuel = 0, heated = 0, waste = 0, damage = 0, temp = 0, burn = 0, maxBurn = 0, active = false }
+            pcall(function() draw(errBus, state, monitor) end)
             logicAdapter, monitor = reconnect()
-            bus = read(logicAdapter)
         end
+
+        os.sleep(0.5)
     end
 end
 
