@@ -35,10 +35,10 @@ local function readReactor(r)
 end
 
 local function draw(bus, state, monitor)
-    local isColor = monitor.isColor and monitor.isColor()
+    local isColor = monitor.isColor()
     
     local C_BG         = colors.black
-    local C_FIRST_COL  = colors.white
+    local C_FIRST_COL  = colors.red
     local C_SECOND_COL = colors.green
 
     monitor.clear()
